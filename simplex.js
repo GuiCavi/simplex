@@ -278,6 +278,10 @@ Simplex = (function() {
 		console.groupEnd('Tabela');
 	}
 
+	function encontraRestricoesArtificiais() {
+		
+	}
+
 	return Simplex;
 })();
 
