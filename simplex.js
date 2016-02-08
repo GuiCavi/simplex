@@ -6,7 +6,6 @@ Simplex = (function() {
 
 		this.objetivo = [];
 		this.restricoes = [];
-		this.tabela = [];
 		this.maiorQueZero = [];
 		this.parcelas = [];
 		this.restricoesArtificiais = [];
@@ -18,12 +17,27 @@ Simplex = (function() {
 		this.guia = ['z'];
 		this.z = [];
 
-		this.processarEntradas();
-		this.criarTabela();
-
 		this.start, this.end;
 
-		this.toString();
+		this.tabelas = [];
+		this.tabela = [];
+
+		this.entrantes = [];
+		this.entrante;
+
+		this.saintes = []
+		this.sainte;
+
+		this.pivo;
+
+		this.nlps = [];
+		this.nlp;
+
+		this.processarEntradas();
+		this.criarTabela();
+		this.resolve();
+
+		// this.toString();
 	}
 
 	function tempo() {
@@ -32,11 +46,14 @@ Simplex = (function() {
 	}
 
 	Simplex.prototype.processarEntradas = function() {
-		
-		this.objetivo = this.$objetivo.innerText.replace(/\s/gmi, '').match(/\((MAX|MIN)\)z=([\+\-\*\/]?((\d*(\.?\d*))x\d*))+/gmi);
+		var objetivoRE = /\((MAX|MIN)\)z=([\+\-\*\/]?((\d*(\.?\d*))x\d*))+/gmi,
+				restricoesRE = /(([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))+([<|>]?=)(\d*(\.?\d+));/gmi,
+				whiteSpaceRE = /\s/gmi;
+
+		this.objetivo = this.$objetivo.textContent.replace(whiteSpaceRE, '').match(objetivoRE);
 		// console.log('Função objetivo', this.objetivo);
 
-		this.restricoes = this.$restricoes.innerText.replace(/\s/gmi, '').match(/(([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))+([<|>]?=)(\d*(\.?\d+));/gmi);
+		this.restricoes = this.$restricoes.textContent.replace(whiteSpaceRE, '').match(restricoesRE);
 		// console.log('Restrições', this.restricoes);
 
 		/**
@@ -54,7 +71,7 @@ Simplex = (function() {
 
 			this.restricoes[i] = this.arrumarSinal(this.restricoes[i]);
 		}
-		
+
 		this.adicionaCoeficientes(this.restricoes, this.parcelas);
 
 		/**
@@ -82,7 +99,7 @@ Simplex = (function() {
 				obj = {
 					coeficiente: '-1',
 					tipo: 'folga',
-					variavel: 'f'+ ++numFolga	
+					variavel: 'f'+ ++numFolga
 				}
 				if (this.guia.indexOf(obj.variavel) == -1) this.guia.push(obj.variavel);
 				this.parcelas[i].push(obj);
@@ -90,15 +107,15 @@ Simplex = (function() {
 				obj = {
 					coeficiente: '1',
 					tipo: 'artificial',
-					variavel: 'a'+ ++numArtificial	
+					variavel: 'a'+ ++numArtificial
 				}
 			}
 			else if (operador == '=') {
 				obj = {
 					coeficiente: '1',
 					tipo: 'artificial',
-					variavel: 'a'+ ++numArtificial	
-				}	
+					variavel: 'a'+ ++numArtificial
+				}
 			}
 
 			if (this.guia.indexOf(obj.variavel) == -1) this.guia.push(obj.variavel);
@@ -164,14 +181,14 @@ Simplex = (function() {
 			};
 		};
 	};
-	
+
 	Simplex.prototype.criarTabela = function() {
 		var linha = 0;
 
 		/**
 		 * Cria a tabela (Objetivo)
 		 */
-		
+
 		// Iguala a função objetivo a zero e armazena em Z para facilitar a visualização
 		this.igualaZero(this.objetivo.toString(), this.z);
 		this.z = this.z[0]; // Conversão Array1[index] = Array2 => Array2[index] = Elemento
@@ -221,16 +238,9 @@ Simplex = (function() {
 			//Vai pra próxima linha
 			linha++;
 		};
-
-		/**
-		 * Verificando se existem variáveis artificiais
-		 */
-		if (this.numArtificial > 0) {
-
-		}
 	};
 
-	Simplex.prototype.igualaZero = function(eq, destino) {		
+	Simplex.prototype.igualaZero = function(eq, destino) {
 		// this.tipo = eq.match(/MAX|MIN/)[0];
 
 		var coefs = eq.match(/(([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))/gmi);
@@ -244,6 +254,111 @@ Simplex = (function() {
 		// console.log(destino);
 	};
 
+	Simplex.prototype.resolve = function() {
+		/**
+		 * Verificando se existem variáveis artificiais
+		 */
+		if (this.numArtificial > 0) {
+			console.log('Existem restrições que implicam em variáveis artificiais. Ainda não foi construído o método para resolver esse tipo de PPL, tente usar apenas restrições simples');
+			// this.encontraRestricoesArtificiais();
+			return;
+		}
+
+		while(!this.terminou()) {
+			this.encontraSainte();
+			this.encontraPivo();
+			this.calculaNLP();
+
+			this.calculaNovasLinhas();
+		}
+
+		console.log(this.tabela[0]);
+	};
+
+	/**
+	 * Verifica se terminou a execução do Simplex
+	 * @return boolean FALSE senão terminou / TRUE caso tenha acabado
+	 */
+	Simplex.prototype.terminou = function() {
+		for (var i = 1; i < this.tabela[0].length - 1; i++) {
+			if (this.tabela[0][i] < 0) {
+				this.entrantes.push(i);
+				this.entrante = i;
+				return false;
+			}
+		};
+		return true;
+	}
+
+	Simplex.prototype.encontraSainte = function() {
+		var len = this.tabela.length;
+		var menor, sainte;
+
+		if (this.numArtificial > 0) len--;
+
+		for (var i = 1; i < len; i++) {
+			var b = this.tabela[i][this.guia.indexOf('b')],
+					valor = this.tabela[i][this.entrante],
+					razao = b / valor;
+
+			if (razao < 0) continue;
+
+			if (menor == undefined) {
+				menor = razao;
+				sainte = i;
+			}
+
+			menor = Math.min(menor, razao);
+		};
+
+		this.saintes.push(sainte);
+		this.sainte = sainte;
+	};
+
+	Simplex.prototype.encontraPivo = function() {
+		this.pivo = this.tabela[this.sainte][this.entrante];
+	};
+
+	Simplex.prototype.calculaNLP = function() {
+		var nlp = [];
+
+		for (var i = 0; i < this.tabela[this.sainte].length; i++) {
+			nlp.push(this.tabela[this.sainte][i] / this.pivo);
+		};
+
+		this.nlps.push(nlp);
+		this.nlp = nlp;
+	};
+
+	Simplex.prototype.calculaNovasLinhas = function() {
+		var novasLinhas = [];
+		for (var i = 0; i < this.tabela.length; i++) {
+			novasLinhas[i] = [];
+
+			if (i == this.sainte) {
+				novasLinhas[i] = this.nlp;
+				continue;
+			}
+
+			var elementoMult = this.tabela[i][this.entrante] * -1;
+			var tempNLP = [];
+
+			for (var j = 0; j < this.nlp.length; j++) {
+				tempNLP.push(this.nlp[j] * elementoMult);
+			};
+
+			for (var j = 0; j < this.tabela[i].length; j++) {
+				novasLinhas[i].push(tempNLP[j] + this.tabela[i][j]);
+			}
+		};
+
+		/**
+		 * FIX: historico de tabelas (array)
+		 */
+		this.tabelas.push(novasLinhas);
+		this.tabela = novasLinhas;
+	};
+
 	Simplex.prototype.toString = function() {
 		console.group('Inicial');
 			console.log('Objetivo', this.objetivo);
@@ -255,13 +370,13 @@ Simplex = (function() {
 			console.log('Número de variáveis de folga', this.numFolga);
 			console.log('Número de variáveis artificiais', this.numArtificial);
 			console.group('Restrições de não negatividade');
-				console.dir(this.maiorQueZero);			
+				console.dir(this.maiorQueZero);
 			console.groupEnd('Restrições de não negatividade');
 		console.groupEnd('Atributos');
 
 		console.group('Pós processamento');
 			console.group('Z');
-				console.dir(this.z);		
+				console.dir(this.z);
 			console.groupEnd('Z');
 
 			console.group('Parcelas');
@@ -274,12 +389,19 @@ Simplex = (function() {
 		console.groupEnd('Pós processamento');
 
 		console.group('Tabela');
-			console.log(this.tabela);
+			console.dir(this.tabela);
 		console.groupEnd('Tabela');
 	}
 
-	function encontraRestricoesArtificiais() {
-		
+	Simplex.prototype.encontraRestricoesArtificiais = function () {
+		for (var i = 0; i < this.parcelas.length; i++) {
+			for (var j = 0; j < this.parcelas[i].length; j++) {
+				if (this.parcelas[i][j].tipo == 'artificial') {
+					this.restricoesArtificiais.push(this.parcelas[i]);
+					break;
+				}
+			};
+		};
 	}
 
 	return Simplex;
@@ -292,12 +414,12 @@ var simplex = new Simplex({
 });
 
 /**
- * 
+ *
  * (([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))+([<|>]?=)(\d*(\.?\d+));
- * 
+ *
  * Regex for validating rules
  * (([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))+([<|>]?=)(\d*(\.?\d+));
- * 
+ *
  * Regex for get the elements
  * (([+\-\*\/]?((\d*(\.?(\d+)))?)x(\d+)))
  *
@@ -337,4 +459,4 @@ We'll write a JSON like this
 	valor: 10
 }
 
-*/ 
+*/
