@@ -215,20 +215,20 @@ x2 >= 0;
 
 	<script src="simplex.js"></script>
 	<script>
-		var simplex = new Simplex({
-			objetivo: document.getElementById('funcao-objetivo').value,
-			restricoes: document.getElementById('restricoes').value,
-			resultado: document.getElementById('resultado'),
-			resultadoVetores: document.getElementById('resultado-vetores')
-		});
-
-		var b = document.getElementById('calcula');
+		// var b = document.getElementById('calcula');
 
 		// b.dispatchEvent(new Event('click'));
 
 		function calcula() {
 			document.getElementById('resultado').innerHTML = '';
 			document.getElementById('resultado-vetores').innerHTML = '';
+			
+			var simplex = new Simplex({
+				objetivo: document.getElementById('funcao-objetivo').value,
+				restricoes: document.getElementById('restricoes').value,
+				resultado: document.getElementById('resultado'),
+				resultadoVetores: document.getElementById('resultado-vetores')
+			});
 
 			simplex.calcular();
 		};
